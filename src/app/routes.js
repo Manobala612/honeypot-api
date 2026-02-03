@@ -1,8 +1,9 @@
 import express from "express";
 import { apiKeyAuth } from "../auth/apiKeyAuth.js";
 import { requestGuard } from "../auth/requestGuard.js";
-import { detectScam } from "../detection/index.js";
-import { extractIntel } from "../extraction/index.js";
+import { detectScam } from "../detection/scamDetector.js";
+import { extractIntel } from "../extraction/intelExtractor.js";
+
 
 const router = express.Router();
 
