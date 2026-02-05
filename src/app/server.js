@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import routes from "./routes.js";
+import { handleMessage } from "./routes.js";
 import { healthCheck } from "./health.js";
 import { runtimeConfig } from "../config/runtime.js";
 
@@ -20,8 +20,10 @@ app.use((err, req, res, next) => {
 /* Health check is public */
 app.get("/health", healthCheck);
 
-/* All routes are now in the router which handles its own security */
-app.use("/", routes);
+/* Directly mapping the chat route. 
+   This replaces app.use("/", routes) to fix the SyntaxError 
+*/
+app.post("/chat", handleMessage); 
 
 /* Global 404 */
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
