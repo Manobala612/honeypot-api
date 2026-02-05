@@ -21,25 +21,48 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
     try {
         const { message_body } = req.body;
 
-        if (!message_body) {
-            return res.status(400).json({ error: "Missing message_body" });
-        }
+        // ✅ FIX: Allow empty / missing body safely
+        const safeMessage = message_body || "";
 
-        globalScamStore.conversation_log.push(message_body);
+        globalScamStore.conversation_log.push(safeMessage);
 
         // 🧠 PASS THE STORE: AI now knows what we already collected!
-        const result = await intelExtractor.processMessage(message_body, globalScamStore);
+        const result = await intelExtractor.processMessage(
+            safeMessage,
+            globalScamStore
+        );
 
         if (result.extracted_intel.phishing_url?.length > 0) {
-            globalScamStore.phishing_url = [...new Set([...globalScamStore.phishing_url, ...result.extracted_intel.phishing_url])];
+            globalScamStore.phishing_url = [
+                ...new Set([
+                    ...globalScamStore.phishing_url,
+                    ...result.extracted_intel.phishing_url
+                ])
+            ];
         }
+
         if (result.extracted_intel.phone_number?.length > 0) {
-            globalScamStore.phone_number = [...new Set([...globalScamStore.phone_number, ...result.extracted_intel.phone_number])];
+            globalScamStore.phone_number = [
+                ...new Set([
+                    ...globalScamStore.phone_number,
+                    ...result.extracted_intel.phone_number
+                ])
+            ];
         }
+
         if (result.extracted_intel.upi_id?.length > 0) {
-            globalScamStore.upi_id = [...new Set([...globalScamStore.upi_id, ...result.extracted_intel.upi_id])];
+            globalScamStore.upi_id = [
+                ...new Set([
+                    ...globalScamStore.upi_id,
+                    ...result.extracted_intel.upi_id
+                ])
+            ];
         }
-        if (result.extracted_intel.bank_account && result.extracted_intel.bank_account !== "No account found") {
+
+        if (
+            result.extracted_intel.bank_account &&
+            result.extracted_intel.bank_account !== "No account found"
+        ) {
             globalScamStore.bank_account = result.extracted_intel.bank_account;
         }
 
@@ -71,7 +94,14 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
 });
 
 router.post("/reset", apiKeyAuth, (req, res) => {
-    globalScamStore = { conversation_log: [], phishing_url: [], phone_number: [], upi_id: [], bank_account: null };
+    globalScamStore = {
+        conversation_log: [],
+        phishing_url: [],
+        phone_number: [],
+        upi_id: [],
+        bank_account: null
+    };
+
     res.json({ message: "Memory cleared!" });
 });
 
