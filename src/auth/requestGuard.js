@@ -1,59 +1,41 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-// Allow empty body (tester sends no message)
 const messageSchema = z.object({
-  sender_id: z.string().optional().default("anonymous"),
-  message_body: z.string().optional().default(""),
-  platform: z.string().optional().default("unknown"),
-  timestamp: z.string().optional()
+    // Made these optional so your simple tests don't crash
+    sender_id: z.string().default("anonymous_scammer"),
+    message_body: z.string().min(1, "Message cannot be empty").max(2000, "Message too long"),
+    platform: z.enum(['whatsapp', 'telegram', 'sms', 'mock_api']).default("sms"),
+    timestamp: z.string().optional()
 });
 
 const dangerousKeywords = [
-  "ignore previous",
-  "system prompt",
-  "reveal your instructions",
-  "forget your persona",
-  "developer mode",
-  "dan mode",
-  "do anything now",
-  "you are now",
-  "hack a bank",
-  "jailbreak"
+    "ignore previous", "system prompt", "reveal your instructions", 
+    "forget your persona", "developer mode", "dan mode", 
+    "do anything now", "you are now", "hack a bank", "jailbreak"
 ];
 
 export const requestGuard = (req, res, next) => {
-  // If body is missing, inject empty object
-  if (!req.body) {
-    req.body = {};
-  }
-
-  const validation = messageSchema.safeParse(req.body);
-
-  if (!validation.success) {
-    return res.status(400).json({
-      status: "error",
-      message: "Invalid request format"
-    });
-  }
-
-  // Normalize body
-  req.body = validation.data;
-
-  // Only check injection if message exists
-  if (req.body.message_body) {
-    const content = req.body.message_body.toLowerCase();
-
-    const hasInjection = dangerousKeywords.some(k =>
-      content.includes(k)
-    );
-
-    if (hasInjection) {
-      return res.status(403).json({
-        status: "error",
-        message: "Security violation"
-      });
+    // 1. Validate the structure
+    const validation = messageSchema.safeParse(req.body);
+    
+    if (!validation.success) {
+        console.log("Validation Failed:", validation.error.format()); // See exactly what's wrong in terminal
+        return res.status(400).json({ 
+            status: "error", 
+            message: "Invalid data format.",
+            details: validation.error.issues.map(i => `${i.path}: ${i.message}`) 
+        });
     }
-  }
 
-  next();
+    // 2. Check for Jailbreak/Injection attempts
+    const content = req.body.message_body.toLowerCase();
+    const hasInjectionAttempt = dangerousKeywords.some(keyword => content.includes(keyword));
+
+    if (hasInjectionAttempt) {
+        console.warn(`🚨 [SECURITY]: Injection attempt detected!`);
+        return res.status(403).json({ status: "error", message: "Security Violation detected." });
+    }
+
+    // 3. Success! Move to the router
+    next();
 };

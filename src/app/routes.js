@@ -1,39 +1,78 @@
-import { getSession, updateSessionIntel } from '../agent/sessionStore.js';
-import { intelExtractor } from '../ai/intelExtractor.js';
-import { runAgent } from '../agent/geminiAgent.js';
+import express from "express";
+import { apiKeyAuth } from "../auth/apiKeyAuth.js";
+import { requestGuard } from "../auth/requestGuard.js";
+import { intelExtractor } from "../ai/intelExtractor.js";
 
-export async function handleMessage(req, res) {
-  try {
-    const { sessionId, messageText } = req.body;
-    
-    if (!sessionId || !messageText) {
-      return res.status(400).json({ error: "Missing sessionId or messageText" });
+const router = express.Router();
+
+let globalScamStore = {
+    conversation_log: [],
+    phishing_url: [],
+    phone_number: [],
+    upi_id: [],
+    bank_account: null
+};
+
+const cleanResponse = (obj) => {
+    return JSON.parse(JSON.stringify(obj).replace(/\\u0027/g, "'"));
+};
+
+router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
+    try {
+        const { message_body } = req.body;
+
+        if (!message_body) {
+            return res.status(400).json({ error: "Missing message_body" });
+        }
+
+        globalScamStore.conversation_log.push(message_body);
+
+        // 🧠 PASS THE STORE: AI now knows what we already collected!
+        const result = await intelExtractor.processMessage(message_body, globalScamStore);
+
+        if (result.extracted_intel.phishing_url?.length > 0) {
+            globalScamStore.phishing_url = [...new Set([...globalScamStore.phishing_url, ...result.extracted_intel.phishing_url])];
+        }
+        if (result.extracted_intel.phone_number?.length > 0) {
+            globalScamStore.phone_number = [...new Set([...globalScamStore.phone_number, ...result.extracted_intel.phone_number])];
+        }
+        if (result.extracted_intel.upi_id?.length > 0) {
+            globalScamStore.upi_id = [...new Set([...globalScamStore.upi_id, ...result.extracted_intel.upi_id])];
+        }
+        if (result.extracted_intel.bank_account && result.extracted_intel.bank_account !== "No account found") {
+            globalScamStore.bank_account = result.extracted_intel.bank_account;
+        }
+
+        const isComplete = !!(
+            globalScamStore.phishing_url.length > 0 &&
+            globalScamStore.phone_number.length > 0 &&
+            globalScamStore.upi_id.length > 0 &&
+            globalScamStore.bank_account
+        );
+
+        const responseData = {
+            status: isComplete ? "completed" : "in_progress",
+            conversation_log: globalScamStore.conversation_log,
+            extracted_intel: {
+                upi_id: globalScamStore.upi_id[0] || null,
+                phone_number: globalScamStore.phone_number[0] || null,
+                phishing_url: globalScamStore.phishing_url[0] || null,
+                bank_account: globalScamStore.bank_account
+            },
+            chatbot_reply: result.reply
+        };
+
+        return res.status(200).json(cleanResponse(responseData));
+
+    } catch (error) {
+        console.error("Route Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
     }
+});
 
-    const session = getSession(sessionId);
+router.post("/reset", apiKeyAuth, (req, res) => {
+    globalScamStore = { conversation_log: [], phishing_url: [], phone_number: [], upi_id: [], bank_account: null };
+    res.json({ message: "Memory cleared!" });
+});
 
-    // 1. Extract and Save
-    const foundIntel = intelExtractor.regexExtract(messageText);
-    updateSessionIntel(session, foundIntel);
-
-    // 2. Track History
-    session.conversation.push(`Scammer: ${messageText}`);
-
-    // 3. Get AI Response
-    const agentResult = await runAgent({
-      history: session.conversation,
-      intel: session.extracted,
-      lastMessage: messageText,
-      session
-    });
-
-    // 4. Save Bot Reply
-    session.conversation.push(`Honeypot: ${agentResult.reply}`);
-    
-    return res.json({ reply: agentResult.reply });
-
-  } catch (error) {
-    console.error("Route Error:", error);
-    return res.status(500).json({ reply: "Connection unstable... please wait." });
-  }
-}
+export default router;
