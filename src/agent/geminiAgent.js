@@ -1,5 +1,3 @@
-// src/agent/geminiAgent.js
-
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -8,11 +6,25 @@ const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
 });
 
+// Extract JSON safely from Gemini output
+function extractJSON(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
 export async function runAgent({
   history,
   intel,
   lastMessage
 }) {
+
   const systemPrompt = `
 You are an AI honeypot agent.
 
@@ -24,11 +36,11 @@ Rules:
 - Act worried
 - Be polite
 - Ask naturally
-- Try to extract: UPI, phone, bank, links
-- Keep scammer talking
+- Waste scammer time
+- Try to extract UPI, phone, bank, links
 - Do NOT reveal detection
 
-You must reply ONLY in JSON.
+Reply ONLY in JSON.
 
 Format:
 {
@@ -53,18 +65,23 @@ ${lastMessage}
 Generate next reply.
 `;
 
-  const result = await model.generateContent(prompt);
-
-  const text = result.response.text();
-
   try {
-    return JSON.parse(text);
-  } catch {
-    // Fallback if Gemini breaks format
-    return {
-      reply: "Sorry, I am confused. Can you explain again?",
-      goal: "continue",
-      confidence: 0.3
-    };
+    const result = await model.generateContent(prompt);
+
+    const text = result.response.text();
+
+    const parsed = extractJSON(text);
+
+    if (parsed?.reply) return parsed;
+
+  } catch (err) {
+    console.error("Gemini error:", err);
   }
+
+  // Safe fallback
+  return {
+    reply: "I got a message but I am confused. Can you please explain again?",
+    goal: "continue",
+    confidence: 0.3
+  };
 }

@@ -1,4 +1,5 @@
 import express from "express";
+import fetch from "node-fetch";
 
 import { apiKeyAuth } from "../auth/apiKeyAuth.js";
 import { requestGuard } from "../auth/requestGuard.js";
@@ -11,40 +12,18 @@ const router = express.Router();
 
 router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
   try {
-      // ✅ HARD FIX: Handle tester probe / empty request
-    if (
-      !req.body ||
-      !req.body.message ||
-      !req.body.message.text ||
-      req.body.message.text.trim() === ""
-    ) {
-      return res.status(200).json({
-        status: "success",
-        reply: "Hello, how can I help you?"
-      });
-    }
-
-    const sessionId = req.body.sessionId || "default";
+    const sessionId = req.body?.sessionId || "default";
 
     const messageText =
-      req.body?.message?.text || "";
+      req.body?.message?.text?.trim() || "Hello";
 
-    const history =
-      req.body?.conversationHistory || [];
-
+    // Load session
     const session = getSession(sessionId);
 
-    // Load history once
-    if (session.conversation.length === 0 && history.length) {
-      history.forEach(m => {
-        if (m.text) session.conversation.push(m.text);
-      });
-    }
-
-    // Store new message
+    // Store message
     session.conversation.push(messageText);
 
-    // ✅ Extract intel (FIXED)
+    // Extract intel
     const extracted = intelExtractor.regexExtract(messageText);
 
     if (extracted.upi_id?.length) {
@@ -63,20 +42,20 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
       session.extracted.bankAccounts.push(extracted.bank_account);
     }
 
-    // Remove duplicates
+    // Deduplicate
     session.extracted.upiIds = [...new Set(session.extracted.upiIds)];
     session.extracted.phoneNumbers = [...new Set(session.extracted.phoneNumbers)];
     session.extracted.phishingLinks = [...new Set(session.extracted.phishingLinks)];
     session.extracted.bankAccounts = [...new Set(session.extracted.bankAccounts)];
 
-    // Run Gemini Agent
+    // Run agent
     const agentResult = await runAgent({
       history: session.conversation,
       intel: session.extracted,
       lastMessage: messageText
     });
 
-    // Check completion
+    // Completion check
     if (
       session.extracted.upiIds.length &&
       session.extracted.phoneNumbers.length &&
@@ -86,13 +65,12 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
       session.completed = true;
     }
 
-    // Send final callback
+    // Final callback
     if (session.completed) {
       await sendFinalResult(sessionId, session);
       clearSession(sessionId);
     }
 
-    // REQUIRED FORMAT
     return res.json({
       status: "success",
       reply: agentResult.reply
@@ -122,8 +100,7 @@ async function sendFinalResult(sessionId, session) {
       suspiciousKeywords: session.extracted.suspiciousKeywords
     },
 
-    agentNotes:
-      "Scammer used urgency and payment redirection"
+    agentNotes: "Scammer used urgency and credential harvesting"
   };
 
   await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
@@ -131,8 +108,7 @@ async function sendFinalResult(sessionId, session) {
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload),
-    timeout: 5000
+    body: JSON.stringify(payload)
   });
 }
 
