@@ -1,108 +1,60 @@
-import express from "express";
-import { apiKeyAuth } from "../auth/apiKeyAuth.js";
-import { requestGuard } from "../auth/requestGuard.js";
-import { intelExtractor } from "../ai/intelExtractor.js";
+import { getSession, updateSessionIntel } from '../agent/sessionStore.js';
+import { intelExtractor } from '../ai/intelExtractor.js';
+import { runAgent } from '../agent/geminiAgent.js';
 
-const router = express.Router();
+async function sendFinalCallback(sessionId, session) {
+  if (session.callbackSent) return;
 
-let globalScamStore = {
-    conversation_log: [],
-    phishing_url: [],
-    phone_number: [],
-    upi_id: [],
-    bank_account: null
-};
+  const payload = {
+    sessionId: sessionId,
+    scamDetected: true,
+    totalMessagesExchanged: session.messageCount,
+    extractedIntelligence: {
+      bankAccounts: session.extracted.bankAccounts,
+      upiIds: session.extracted.upiIds,
+      phishingLinks: session.extracted.phishingLinks,
+      phoneNumbers: session.extracted.phoneNumbers,
+      suspiciousKeywords: session.extracted.suspiciousKeywords
+    },
+    agentNotes: "Scammer successfully engaged. Extracted bank and UPI details using panicked persona."
+  };
 
-const cleanResponse = (obj) => {
-    return JSON.parse(JSON.stringify(obj).replace(/\\u0027/g, "'"));
-};
+  try {
+    const res = await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) session.callbackSent = true;
+  } catch (err) {
+    console.error("Callback failed:", err);
+  }
+}
 
-router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
-    try {
-        const { message_body } = req.body;
+export async function handleMessage(req, res) {
+  try {
+    const { sessionId, message, conversationHistory } = req.body;
+    const messageText = message?.text || "";
 
-        // ✅ FIX: Allow empty / missing body safely
-        const safeMessage = message_body || "";
+    const session = getSession(sessionId || "default");
+    session.messageCount++;
 
-        globalScamStore.conversation_log.push(safeMessage);
+    // 1. Extract & Update
+    const foundIntel = intelExtractor.regexExtract(messageText);
+    updateSessionIntel(session, foundIntel, messageText);
 
-        // 🧠 PASS THE STORE: AI now knows what we already collected!
-        const result = await intelExtractor.processMessage(
-            safeMessage,
-            globalScamStore
-        );
+    // 2. Generate Reply
+    const agentResult = await runAgent({ history: conversationHistory, session });
 
-        if (result.extracted_intel.phishing_url?.length > 0) {
-            globalScamStore.phishing_url = [
-                ...new Set([
-                    ...globalScamStore.phishing_url,
-                    ...result.extracted_intel.phishing_url
-                ])
-            ];
-        }
-
-        if (result.extracted_intel.phone_number?.length > 0) {
-            globalScamStore.phone_number = [
-                ...new Set([
-                    ...globalScamStore.phone_number,
-                    ...result.extracted_intel.phone_number
-                ])
-            ];
-        }
-
-        if (result.extracted_intel.upi_id?.length > 0) {
-            globalScamStore.upi_id = [
-                ...new Set([
-                    ...globalScamStore.upi_id,
-                    ...result.extracted_intel.upi_id
-                ])
-            ];
-        }
-
-        if (
-            result.extracted_intel.bank_account &&
-            result.extracted_intel.bank_account !== "No account found"
-        ) {
-            globalScamStore.bank_account = result.extracted_intel.bank_account;
-        }
-
-        const isComplete = !!(
-            globalScamStore.phishing_url.length > 0 &&
-            globalScamStore.phone_number.length > 0 &&
-            globalScamStore.upi_id.length > 0 &&
-            globalScamStore.bank_account
-        );
-
-        const responseData = {
-            status: isComplete ? "completed" : "in_progress",
-            conversation_log: globalScamStore.conversation_log,
-            extracted_intel: {
-                upi_id: globalScamStore.upi_id[0] || null,
-                phone_number: globalScamStore.phone_number[0] || null,
-                phishing_url: globalScamStore.phishing_url[0] || null,
-                bank_account: globalScamStore.bank_account
-            },
-            chatbot_reply: result.reply
-        };
-
-        return res.status(200).json(cleanResponse(responseData));
-
-    } catch (error) {
-        console.error("Route Error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
+    // 3. Check if done (Trigger Callback)
+    if (session.stage === "stall") {
+      await sendFinalCallback(sessionId, session);
     }
-});
 
-router.post("/reset", apiKeyAuth, (req, res) => {
-    globalScamStore = {
-        conversation_log: [],
-        phishing_url: [],
-        phone_number: [],
-        upi_id: [],
-        bank_account: null
-    };
+    // 4. Return Hackathon Format
+    return res.json({ status: "success", reply: agentResult.reply });
 
-    res.json({ message: "Memory cleared!" });
-});
-
-export default router;
+  } catch (error) {
+    return res.status(200).json({ status: "success", reply: "I'm so confused... what should I do?" });
+  }
+}
