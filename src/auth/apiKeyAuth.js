@@ -1,19 +1,31 @@
-export function apiKeyAuth(req, res, next) {
-  const apiKey = req.headers["x-api-key"];
+import { runtimeConfig } from "../config/runtime.js";
 
-  if (!apiKey) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      message: "API key is missing"
-    });
-  }
+/**
+ * Role 2: Security Middleware
+ * Hardcoded to allow "supersecretkey123" while keeping the 
+ * Gemini AI key safe in the background.
+ */
+export const apiKeyAuth = (req, res, next) => {
+    const clientKey = req.headers['x-api-key'];
 
-  if (apiKey !== process.env.API_KEY) {
-    return res.status(403).json({
-      error: "Forbidden",
-      message: "Invalid API key"
-    });
-  }
+    // This is what you are typing in PowerShell
+    const MASTER_GATE_KEY = "supersecretkey123";
 
-  next();
-}
+    if (!clientKey) {
+        return res.status(401).json({ 
+            status: "error",
+            message: "Unauthorized: API Key is missing." 
+        });
+    }
+
+    // Now comparing against the string you actually want to use
+    if (clientKey !== MASTER_GATE_KEY) {
+        console.warn(`[AUTH FAIL] Received: ${clientKey} - Expected: ${MASTER_GATE_KEY}`);
+        return res.status(403).json({ 
+            status: "error",
+            message: "Forbidden: Invalid API Key." 
+        });
+    }
+
+    next();
+};

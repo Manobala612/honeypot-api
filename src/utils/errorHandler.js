@@ -1,12 +1,15 @@
-// src/utils/errorHandler.js
-import { RESPONSE_STATUS } from './constants.js';
+export function errorHandler(err, req, res, next) {
+  console.error("Error:", err.message);
 
-export function buildError(message, code = 500) {
-  return {
-    status: RESPONSE_STATUS.ERROR,
-    error: {
-      message,
-      code
-    }
-  };
+  res.status(500).json({
+    error: "Internal Server Error",
+    message: "Something went wrong"
+  });
+}
+
+export function notFoundHandler(req, res) {
+  res.status(404).json({
+    error: "Not Found",
+    message: "Route does not exist"
+  });
 }

@@ -3,37 +3,29 @@ import cors from "cors";
 import routes from "./routes.js";
 import { healthCheck } from "./health.js";
 import { runtimeConfig } from "../config/runtime.js";
-import { errorHandler, notFoundHandler } from "../utils/errorHandler.js";
 
 const app = express();
 
 app.use(cors());
-
-/* JSON parser with malformed JSON protection */
 app.use(express.json());
+
+// Malformed JSON protection
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
-    return res.status(400).json({
-      error: "Bad Request",
-      message: "Malformed JSON payload"
-    });
+    return res.status(400).json({ error: "Bad Request", message: "Malformed JSON payload" });
   }
-  next(err);
+  next();
 });
 
-/* Health endpoint */
+/* Health check is public */
 app.get("/health", healthCheck);
 
-/* API routes */
+/* All routes are now in the router which handles its own security */
 app.use("/", routes);
 
-/* 404 handler */
-app.use(notFoundHandler);
+/* Global 404 */
+app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 
-/* Global error handler */
-app.use(errorHandler);
-
-/* Start server */
 app.listen(runtimeConfig.port, () => {
-  console.log(`Server running on port ${runtimeConfig.port}`);
+  console.log(`🚀 Honeypot Server active on port ${runtimeConfig.port}`);
 });

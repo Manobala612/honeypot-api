@@ -1,58 +1,25 @@
-import {
-  normalizeUPI,
-  normalizePhone,
-  normalizeURL,
-  normalizeBank
-} from "./normalizer.js";
+import { isValidUPI, isValidPhone, isValidURL } from "./validators.js";
+import { normalizePhone, normalizeText } from "./normalizer.js";
 
-import {
-  isValidUPI,
-  isValidPhone,
-  isValidURL,
-  isValidBank
-} from "./validators.js";
+export function extractIntel(message) {
+  const upiMatch = message.match(/[a-zA-Z0-9.\-_]{2,}@[a-zA-Z]{2,}/);
+  const phoneMatch = message.match(/\b\d{10}\b/);
+  const urlMatch = message.match(/https?:\/\/[^\s]+/);
 
-export function extractIntel(text = "") {
-  // UPI IDs
-  const upiMatches = [
-    ...text.matchAll(/\b[a-zA-Z0-9.\-_]+@[a-zA-Z]+\b/g)
-  ].map(m => m[0]);
+  const upi_id =
+    upiMatch && isValidUPI(upiMatch[0]) ? normalizeText(upiMatch[0]) : null;
 
-  // Phone numbers (India focused)
-  const phoneMatches = [
-    ...text.matchAll(/(?:\+91\s?)?\b\d{10}\b/g)
-  ].map(m => m[0]);
+  const phone_number =
+    phoneMatch && isValidPhone(phoneMatch[0])
+      ? normalizePhone(phoneMatch[0])
+      : null;
 
-  // URLs
-  const urlMatches = [
-    ...text.matchAll(/https?:\/\/[^\s]+/gi)
-  ].map(m => m[0]);
-
-  // Bank account numbers (9–18 digits)
-  const bankMatches = [
-    ...text.matchAll(/\b\d{9,18}\b/g)
-  ].map(m => m[0]);
-
-  const upi = upiMatches
-    .map(normalizeUPI)
-    .filter(isValidUPI)[0] || null;
-
-  const phone = phoneMatches
-    .map(normalizePhone)
-    .filter(isValidPhone)[0] || null;
-
-  const url = urlMatches
-    .map(normalizeURL)
-    .filter(isValidURL)[0] || null;
-
-  const bank = bankMatches
-    .map(normalizeBank)
-    .filter(isValidBank)[0] || null;
+  const phishing_url =
+    urlMatch && isValidURL(urlMatch[0]) ? normalizeText(urlMatch[0]) : null;
 
   return {
-    upi_id: upi,
-    phone_number: phone,
-    phishing_url: url,
-    bank_account: bank
+    upi_id,
+    phone_number,
+    phishing_url,
   };
 }

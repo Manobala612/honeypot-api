@@ -1,13 +1,16 @@
-// src/extraction/validators.js
-
 export function isValidUPI(upi) {
-  return typeof upi === 'string' && upi.includes('@upi');
+  return /^[a-zA-Z0-9.\-_]{2,}@[a-zA-Z]{2,}$/.test(upi);
 }
 
 export function isValidPhone(phone) {
-  return typeof phone === 'string' && phone.length === 10;
+  return /^\d{10}$/.test(phone);
 }
 
 export function isValidURL(url) {
-  return typeof url === 'string' && url.startsWith('http');
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }

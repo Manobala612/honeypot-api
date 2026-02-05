@@ -1,6 +1,8 @@
-import { ENV } from "./env.js";
+import dotenv from 'dotenv';
+dotenv.config();
 
 export const runtimeConfig = {
-  port: ENV.PORT || 3000,
-  isProduction: ENV.NODE_ENV === "production"
+    // This looks into your .env file
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    port: process.env.PORT || 3000
 };
