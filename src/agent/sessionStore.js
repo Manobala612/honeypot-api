@@ -6,6 +6,8 @@ export function getSession(sessionId) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
       conversation: [],
+
+      // ✅ FIX: Always initialize extracted
       extracted: {
         upiIds: [],
         phoneNumbers: [],
@@ -13,6 +15,7 @@ export function getSession(sessionId) {
         bankAccounts: [],
         suspiciousKeywords: []
       },
+
       completed: false
     });
   }
