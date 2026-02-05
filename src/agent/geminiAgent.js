@@ -6,10 +6,36 @@ const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
 });
 
-// Extract JSON safely from Gemini output
+// Smart fallback generator
+function fallbackReply(intel, lastMessage) {
+
+  // If no bank yet → ask bank
+  if (!intel.bankAccounts.length) {
+    return "I am very scared. Which account number are you talking about? Please send it again.";
+  }
+
+  // If no phone yet → ask phone
+  if (!intel.phoneNumbers.length) {
+    return "I got a call also. Which number should I contact? Please send the phone number.";
+  }
+
+  // If no UPI yet → ask UPI
+  if (!intel.upiIds.length) {
+    return "They told me about UPI also. Can you send the UPI ID again?";
+  }
+
+  // If no link → ask link
+  if (!intel.phishingLinks.length) {
+    return "I am not able to open anything. Can you send the link again?";
+  }
+
+  // Default stall
+  return "I am trying but network is slow. Please wait one minute.";
+}
+
+// Extract JSON safely
 function extractJSON(text) {
   const match = text.match(/\{[\s\S]*\}/);
-
   if (!match) return null;
 
   try {
@@ -26,43 +52,30 @@ export async function runAgent({
 }) {
 
   const systemPrompt = `
-You are an AI honeypot agent.
+You are a honeypot pretending to be a worried Indian bank customer.
 
-Persona: Confused Indian bank customer.
-
-Rules:
-- Never say you are AI
-- Never accuse scammer
-- Act worried
-- Be polite
-- Ask naturally
-- Waste scammer time
-- Try to extract UPI, phone, bank, links
-- Do NOT reveal detection
+You want to waste scammer time and collect details.
 
 Reply ONLY in JSON.
 
-Format:
 {
-  "reply": "...",
-  "goal": "extract_upi | extract_phone | extract_bank | extract_link | continue",
-  "confidence": 0.0-1.0
+  "reply": "string"
 }
 `;
 
   const prompt = `
 ${systemPrompt}
 
-Conversation so far:
+Conversation:
 ${history.join("\n")}
 
-Known intelligence:
-${JSON.stringify(intel, null, 2)}
+Known data:
+${JSON.stringify(intel)}
 
 Last message:
 ${lastMessage}
 
-Generate next reply.
+Generate reply.
 `;
 
   try {
@@ -72,16 +85,16 @@ Generate next reply.
 
     const parsed = extractJSON(text);
 
-    if (parsed?.reply) return parsed;
+    if (parsed?.reply) {
+      return { reply: parsed.reply };
+    }
 
   } catch (err) {
     console.error("Gemini error:", err);
   }
 
-  // Safe fallback
+  // 💥 GUARANTEED fallback (never loops stupidly)
   return {
-    reply: "I got a message but I am confused. Can you please explain again?",
-    goal: "continue",
-    confidence: 0.3
+    reply: fallbackReply(intel, lastMessage)
   };
 }
