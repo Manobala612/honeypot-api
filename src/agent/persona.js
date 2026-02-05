@@ -1,29 +1,27 @@
-export function generateReply(message, extracted) {
-  const text = message.toLowerCase();
+// src/extraction/intelExtractor.js
+import { normalizeUPI, normalizePhone, normalizeURL } from './normalizer.js';
+import { isValidUPI, isValidPhone, isValidURL } from './validators.js';
 
-  // If UPI not found yet → try to get it
-  if (!extracted.upi_id) {
-    if (text.includes("pay") || text.includes("send")) {
-      return "Payment failed. Please send your UPI ID again.";
-    }
-    return "How should I pay? Please send UPI ID.";
-  }
+export function extractIntel(text = '') {
+  const upiMatches = [...text.matchAll(/\b[\w.\-]+@upi\b/gi)].map(m => m[0]);
+  const phoneMatches = [...text.matchAll(/\+91\s?\d{10}|\b\d{10}\b/g)].map(m => m[0]);
+  const urlMatches = [...text.matchAll(/https?:\/\/[^\s]+/gi)].map(m => m[0]);
 
-  // If phone not found yet → ask for contact
-  if (!extracted.phone_number) {
-    return "It is not working. Can I call you? Send number.";
-  }
+  const upi_ids = upiMatches
+    .map(normalizeUPI)
+    .filter(isValidUPI);
 
-  // If bank not found → try alternate payment
-  if (!extracted.bank_account) {
-    return "UPI is not working. Any bank account?";
-  }
+  const phone_numbers = phoneMatches
+    .map(normalizePhone)
+    .filter(isValidPhone);
 
-  // If link issue
-  if (text.includes("link") || text.includes("click")) {
-    return "Link not opening. Please send again.";
-  }
+  const urls = urlMatches
+    .map(normalizeURL)
+    .filter(isValidURL);
 
-  // Default fallback
-  return "Please explain again. I am confused.";
+  return {
+    upi_ids,
+    phone_numbers,
+    urls
+  };
 }
