@@ -2,31 +2,39 @@ import { getSession, updateSessionIntel } from '../agent/sessionStore.js';
 import { intelExtractor } from '../ai/intelExtractor.js';
 import { runAgent } from '../agent/geminiAgent.js';
 
+// We are using named exports here
 export async function handleMessage(req, res) {
-  const { sessionId, messageText } = req.body;
-  
-  // 1. Load the user's session
-  const session = getSession(sessionId);
+  try {
+    const { sessionId, messageText } = req.body;
+    
+    if (!messageText) {
+      return res.status(400).json({ error: "No message provided" });
+    }
 
-  // 2. Scan the current message for intel (Account numbers, etc.)
-  const foundIntel = intelExtractor.regexExtract(messageText);
+    const session = getSession(sessionId);
 
-  // 3. SAVE that intel into the session immediately
-  updateSessionIntel(session, foundIntel);
+    // 1. Extract and Save
+    const foundIntel = intelExtractor.regexExtract(messageText);
+    updateSessionIntel(session, foundIntel);
 
-  // 4. Update the history
-  session.conversation.push(`Scammer: ${messageText}`);
+    // 2. Track History
+    session.conversation.push(`Scammer: ${messageText}`);
 
-  // 5. Ask the AI Agent for a reply
-  const agentResult = await runAgent({
-    history: session.conversation,
-    intel: session.extracted,
-    lastMessage: messageText,
-    session
-  });
+    // 3. Get AI Response
+    const agentResult = await runAgent({
+      history: session.conversation,
+      intel: session.extracted,
+      lastMessage: messageText,
+      session
+    });
 
-  // 6. Save the bot's reply and send to user
-  session.conversation.push(`Honeypot: ${agentResult.reply}`);
-  
-  res.json({ reply: agentResult.reply });
+    // 4. Save Bot Reply
+    session.conversation.push(`Honeypot: ${agentResult.reply}`);
+    
+    return res.json({ reply: agentResult.reply });
+
+  } catch (error) {
+    console.error("Route Error:", error);
+    return res.status(500).json({ reply: "I... I don't understand. What is happening?" });
+  }
 }
