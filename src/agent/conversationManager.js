@@ -52,7 +52,7 @@ export function handleConversation(sessionId, message) {
 
   return {
     status: "in_progress",
-    reply: generateReply(message, session.extracted),
+    reply: generateReply(),
     session_id: sessionId
   };
 }
