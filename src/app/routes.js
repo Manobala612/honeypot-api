@@ -19,14 +19,15 @@ const cleanResponse = (obj) => {
 
 router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
     try {
-        const { message_body } = req.body;
 
-        // ✅ FIX: Allow empty / missing body safely
-        const safeMessage = message_body || "";
+        // ✅ FIX: Read both formats (tester + your old format)
+        const safeMessage =
+            req.body?.message?.text ||
+            req.body?.message_body ||
+            "";
 
         globalScamStore.conversation_log.push(safeMessage);
 
-        // 🧠 PASS THE STORE: AI now knows what we already collected!
         const result = await intelExtractor.processMessage(
             safeMessage,
             globalScamStore
