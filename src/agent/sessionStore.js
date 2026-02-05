@@ -11,9 +11,11 @@ export function getSession(sessionId) {
         upiIds: [],
         phoneNumbers: [],
         phishingLinks: [],
-        bankAccounts: [],
-        suspiciousKeywords: []
+        bankAccounts: []
       },
+
+      // 👇 NEW: track progress
+      stage: "bank", // bank → phone → upi → link → stall
 
       completed: false
     });

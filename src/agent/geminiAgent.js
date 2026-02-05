@@ -6,36 +6,48 @@ const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash"
 });
 
-// Smart fallback generator
-function fallbackReply(intel, lastMessage) {
 
-  // If no bank yet → ask bank
-  if (!intel.bankAccounts.length) {
-    return "I am very scared. Which account number are you talking about? Please send it again.";
+// Guaranteed fallback using stage
+function fallbackReply(session, lastMessage) {
+
+  const intel = session.extracted;
+
+
+  // Update stage if data found
+  if (intel.bankAccounts.length) session.stage = "phone";
+  if (intel.phoneNumbers.length) session.stage = "upi";
+  if (intel.upiIds.length) session.stage = "link";
+  if (intel.phishingLinks.length) session.stage = "stall";
+
+
+  switch (session.stage) {
+
+    case "bank":
+      return "I am very scared. Please send the full account number clearly again.";
+
+    case "phone":
+      return "Which phone number should I contact? Please send it.";
+
+    case "upi":
+      return "They told me about UPI also. Please send the UPI ID.";
+
+    case "link":
+      return "I am not able to open anything. Can you send the link again?";
+
+    case "stall":
+      return "Network is very slow. I am trying. Please wait.";
+
+    default:
+      return "Please wait, I am checking.";
   }
-
-  // If no phone yet → ask phone
-  if (!intel.phoneNumbers.length) {
-    return "I got a call also. Which number should I contact? Please send the phone number.";
-  }
-
-  // If no UPI yet → ask UPI
-  if (!intel.upiIds.length) {
-    return "They told me about UPI also. Can you send the UPI ID again?";
-  }
-
-  // If no link → ask link
-  if (!intel.phishingLinks.length) {
-    return "I am not able to open anything. Can you send the link again?";
-  }
-
-  // Default stall
-  return "I am trying but network is slow. Please wait one minute.";
 }
 
-// Extract JSON safely
+
+// Extract JSON from Gemini
 function extractJSON(text) {
+
   const match = text.match(/\{[\s\S]*\}/);
+
   if (!match) return null;
 
   try {
@@ -45,40 +57,33 @@ function extractJSON(text) {
   }
 }
 
+
 export async function runAgent({
   history,
   intel,
-  lastMessage
+  lastMessage,
+  session
 }) {
 
-  const systemPrompt = `
-You are a honeypot pretending to be a worried Indian bank customer.
-
-You want to waste scammer time and collect details.
+  const prompt = `
+You are a honeypot acting as a worried bank customer.
 
 Reply ONLY in JSON.
 
-{
-  "reply": "string"
-}
-`;
-
-  const prompt = `
-${systemPrompt}
+{ "reply": "..." }
 
 Conversation:
 ${history.join("\n")}
 
-Known data:
+Known info:
 ${JSON.stringify(intel)}
 
 Last message:
 ${lastMessage}
-
-Generate reply.
 `;
 
   try {
+
     const result = await model.generateContent(prompt);
 
     const text = result.response.text();
@@ -93,8 +98,9 @@ Generate reply.
     console.error("Gemini error:", err);
   }
 
-  // 💥 GUARANTEED fallback (never loops stupidly)
+
+  // 💥 Always works
   return {
-    reply: fallbackReply(intel, lastMessage)
+    reply: fallbackReply(session, lastMessage)
   };
 }

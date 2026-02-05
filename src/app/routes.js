@@ -48,12 +48,13 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
     session.extracted.phishingLinks = [...new Set(session.extracted.phishingLinks)];
     session.extracted.bankAccounts = [...new Set(session.extracted.bankAccounts)];
 
-    // Run agent
     const agentResult = await runAgent({
       history: session.conversation,
       intel: session.extracted,
-      lastMessage: messageText
+      lastMessage: messageText,
+      session
     });
+
 
     // Completion check
     if (
