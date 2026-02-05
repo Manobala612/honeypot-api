@@ -1,109 +1,105 @@
 import express from "express";
+import fetch from "node-fetch";
+
 import { apiKeyAuth } from "../auth/apiKeyAuth.js";
 import { requestGuard } from "../auth/requestGuard.js";
-import { intelExtractor } from "../ai/intelExtractor.js";
+
+import { getSession, clearSession } from "../agent/sessionStore.js";
+import { runAgent } from "../agent/geminiAgent.js";
+import { extractIntel } from "../ai/intelExtractor.js";
 
 const router = express.Router();
 
-let globalScamStore = {
-    conversation_log: [],
-    phishing_url: [],
-    phone_number: [],
-    upi_id: [],
-    bank_account: null
-};
-
-const cleanResponse = (obj) => {
-    return JSON.parse(JSON.stringify(obj).replace(/\\u0027/g, "'"));
-};
-
 router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
-    try {
+  try {
+    const sessionId = req.body.sessionId || "default";
 
-        // ✅ FIX: Read both formats (tester + your old format)
-        const safeMessage =
-            req.body?.message?.text ||
-            req.body?.message_body ||
-            "";
+    const messageText =
+      req.body?.message?.text || "";
 
-        globalScamStore.conversation_log.push(safeMessage);
+    const history =
+      req.body?.conversationHistory || [];
 
-        const result = await intelExtractor.processMessage(
-            safeMessage,
-            globalScamStore
-        );
+    const session = getSession(sessionId);
 
-        if (result.extracted_intel.phishing_url?.length > 0) {
-            globalScamStore.phishing_url = [
-                ...new Set([
-                    ...globalScamStore.phishing_url,
-                    ...result.extracted_intel.phishing_url
-                ])
-            ];
-        }
-
-        if (result.extracted_intel.phone_number?.length > 0) {
-            globalScamStore.phone_number = [
-                ...new Set([
-                    ...globalScamStore.phone_number,
-                    ...result.extracted_intel.phone_number
-                ])
-            ];
-        }
-
-        if (result.extracted_intel.upi_id?.length > 0) {
-            globalScamStore.upi_id = [
-                ...new Set([
-                    ...globalScamStore.upi_id,
-                    ...result.extracted_intel.upi_id
-                ])
-            ];
-        }
-
-        if (
-            result.extracted_intel.bank_account &&
-            result.extracted_intel.bank_account !== "No account found"
-        ) {
-            globalScamStore.bank_account = result.extracted_intel.bank_account;
-        }
-
-        const isComplete = !!(
-            globalScamStore.phishing_url.length > 0 &&
-            globalScamStore.phone_number.length > 0 &&
-            globalScamStore.upi_id.length > 0 &&
-            globalScamStore.bank_account
-        );
-
-        const responseData = {
-            status: isComplete ? "completed" : "in_progress",
-            conversation_log: globalScamStore.conversation_log,
-            extracted_intel: {
-                upi_id: globalScamStore.upi_id[0] || null,
-                phone_number: globalScamStore.phone_number[0] || null,
-                phishing_url: globalScamStore.phishing_url[0] || null,
-                bank_account: globalScamStore.bank_account
-            },
-            chatbot_reply: result.reply
-        };
-
-        return res.status(200).json(cleanResponse(responseData));
-
-    } catch (error) {
-        console.error("Route Error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
+    // Load history once
+    if (session.conversation.length === 0 && history.length) {
+      history.forEach(m => {
+        if (m.text) session.conversation.push(m.text);
+      });
     }
+
+    // Store new message
+    session.conversation.push(messageText);
+
+    // Extract intel
+    extractIntel(messageText, session);
+
+    // Run Gemini Agent
+    const agentResult = await runAgent({
+      history: session.conversation,
+      intel: session.extracted,
+      lastMessage: messageText
+    });
+
+    // Check completion
+    if (
+      session.extracted.upiIds.length &&
+      session.extracted.phoneNumbers.length &&
+      session.extracted.bankAccounts.length &&
+      session.extracted.phishingLinks.length
+    ) {
+      session.completed = true;
+    }
+
+    // Send final callback
+    if (session.completed) {
+      await sendFinalResult(sessionId, session);
+      clearSession(sessionId);
+    }
+
+    // REQUIRED FORMAT
+    return res.json({
+      status: "success",
+      reply: agentResult.reply
+    });
+
+  } catch (err) {
+    console.error("Route error:", err);
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
 });
 
-router.post("/reset", apiKeyAuth, (req, res) => {
-    globalScamStore = {
-        conversation_log: [],
-        phishing_url: [],
-        phone_number: [],
-        upi_id: [],
-        bank_account: null
-    };
+async function sendFinalResult(sessionId, session) {
+  const payload = {
+    sessionId,
+    scamDetected: true,
+    totalMessagesExchanged: session.conversation.length,
 
-    res.json({ message: "Memory cleared!" });
-});
+    extractedIntelligence: {
+      bankAccounts: session.extracted.bankAccounts,
+      upiIds: session.extracted.upiIds,
+      phishingLinks: session.extracted.phishingLinks,
+      phoneNumbers: session.extracted.phoneNumbers,
+      suspiciousKeywords: session.extracted.suspiciousKeywords
+    },
+
+    agentNotes:
+      "Scammer used urgency and payment redirection"
+  };
+
+  await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload),
+    timeout: 5000
+  });
+}
 
 export default router;
