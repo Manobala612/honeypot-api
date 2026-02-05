@@ -1,12 +1,11 @@
 import express from "express";
-import fetch from "node-fetch";
 
 import { apiKeyAuth } from "../auth/apiKeyAuth.js";
 import { requestGuard } from "../auth/requestGuard.js";
 
 import { getSession, clearSession } from "../agent/sessionStore.js";
 import { runAgent } from "../agent/geminiAgent.js";
-import { extractIntel } from "../ai/intelExtractor.js";
+import { intelExtractor } from "../ai/intelExtractor.js";
 
 const router = express.Router();
 
@@ -32,8 +31,30 @@ router.post("/honeypot", apiKeyAuth, requestGuard, async (req, res) => {
     // Store new message
     session.conversation.push(messageText);
 
-    // Extract intel
-    extractIntel(messageText, session);
+    // ✅ Extract intel (FIXED)
+    const extracted = intelExtractor.regexExtract(messageText);
+
+    if (extracted.upi_id?.length) {
+      session.extracted.upiIds.push(...extracted.upi_id);
+    }
+
+    if (extracted.phone_number?.length) {
+      session.extracted.phoneNumbers.push(...extracted.phone_number);
+    }
+
+    if (extracted.phishing_url?.length) {
+      session.extracted.phishingLinks.push(...extracted.phishing_url);
+    }
+
+    if (extracted.bank_account) {
+      session.extracted.bankAccounts.push(extracted.bank_account);
+    }
+
+    // Remove duplicates
+    session.extracted.upiIds = [...new Set(session.extracted.upiIds)];
+    session.extracted.phoneNumbers = [...new Set(session.extracted.phoneNumbers)];
+    session.extracted.phishingLinks = [...new Set(session.extracted.phishingLinks)];
+    session.extracted.bankAccounts = [...new Set(session.extracted.bankAccounts)];
 
     // Run Gemini Agent
     const agentResult = await runAgent({
