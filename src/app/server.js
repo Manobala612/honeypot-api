@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// API Key Auth (Matches supersecretkey123 in your tester)
+// API Key Auth
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
   const apiKey = req.headers['x-api-key'];
@@ -19,8 +19,8 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", healthCheck);
-app.post("/chat", handleMessage); // Endpoint MUST be /chat to match tester
+app.post("/chat", handleMessage); // MUST BE /chat
 
 app.listen(runtimeConfig.port, () => {
-  console.log(`🚀 Honeypot active on port ${runtimeConfig.port}`);
+  console.log(`🚀 Server active on port ${runtimeConfig.port}`);
 });
