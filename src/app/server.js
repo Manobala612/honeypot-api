@@ -8,18 +8,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. API Key Security (Required for Hackathon)
+// API Key Auth (Matches supersecretkey123 in your tester)
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
   const apiKey = req.headers['x-api-key'];
-  if (apiKey !== 'supersecretkey123') { 
+  if (apiKey !== 'supersecretkey123') {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
 });
 
 app.get("/health", healthCheck);
-app.post("/chat", handleMessage); // This is your main endpoint
+app.post("/chat", handleMessage); // Endpoint MUST be /chat to match tester
 
 app.listen(runtimeConfig.port, () => {
   console.log(`🚀 Honeypot active on port ${runtimeConfig.port}`);
